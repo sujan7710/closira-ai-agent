@@ -1,0 +1,9 @@
+User: Clinic
+
+Bot:
+How large is your team?
+
+User: 5 members
+
+Bot:
+What tools are you currently using?

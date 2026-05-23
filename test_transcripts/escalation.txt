@@ -1,0 +1,5 @@
+User: I am angry about your terrible service.
+
+Bot:
+Escalating to human agent.
+Reason: Escalation triggered: angry

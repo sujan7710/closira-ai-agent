@@ -1,0 +1,6 @@
+User: What are your Botox prices?
+
+Bot:
+Botox prices start from £200.
+
+What type of business do you run?
