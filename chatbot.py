@@ -1,4 +1,4 @@
-"""Conversation router for the Bloom Aesthetics support agent.
+"""Conversation router for the support agent. All business specifics come from state.business.
 
 Every message goes through two steps:
 
@@ -7,11 +7,11 @@ Every message goes through two steps:
 
 Deciding (ROUTER_MODE=llm, the default):
   1. "summary" command                       -> summary            (deterministic)
-  2. Guardrail rules (medical, legal)        -> escalate           (always win)
+  2. Guardrail rules (per business)          -> escalate           (always win)
   3. LLM intent classifier, confidence >= threshold -> act on its intent
   4. Classifier failed or low confidence     -> rule-based decision (fallback)
 
-ROUTER_MODE=rules skips step 3 and is used as the baseline in evals.
+ROUTER_MODE=rules skips step 3 (and LLM lead extraction) and is the eval baseline.
 """
 
 import logging
@@ -23,17 +23,16 @@ from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 import classifier
-from escalation import GUARDRAIL_CATEGORIES, label_for, match_escalation
-from lead_qualification import LEAD_QUESTIONS
-from prompts import NO_ANSWER_TOKEN, SYSTEM_PROMPT
-from sop_data import SOP, SOP_TOPICS
+import extractor
+from escalation import match_escalation
+from prompts import NO_ANSWER_TOKEN, build_answer_prompt
 from summary import generate_summary
 
 load_dotenv()
 
 logger = logging.getLogger("closira.agent")
 
-MAX_UNANSWERED = 2          # SOP: escalate if more than 2 unanswered questions
+MAX_UNANSWERED = 2          # escalate if more than 2 unanswered questions
 HISTORY_WINDOW = 10         # messages of context sent to the answering LLM
 
 QUESTION_WORDS = {
@@ -46,48 +45,7 @@ GREETING_RE = re.compile(
 THANKS_RE = re.compile(r"^(thanks|thank you|cheers|ok(ay)? thanks?)( (so|very) much)?[\s!.,]*$", re.IGNORECASE)
 SUMMARY_RE = re.compile(r"^summary[\s!.?]*$", re.IGNORECASE)
 
-_TOPIC_PATTERNS = {
-    topic: [re.compile(rf"(?<!\w){p}(?!\w)", re.IGNORECASE) for p in patterns]
-    for topic, patterns in SOP_TOPICS.items()
-}
-
 ESCALATION_INTENTS = {"complaint", "human_request", "legal", "medical", "price_negotiation"}
-
-GREETING_REPLY = (
-    "Hello! Welcome to Bloom Aesthetics Clinic. I can help with our treatments, "
-    "prices, opening hours, booking and cancellations. What would you like to know?"
-)
-THANKS_REPLY = "You're welcome! Is there anything else I can help with?"
-HELP_REPLY = (
-    "I can help with our treatments, prices, opening hours, booking and cancellations. "
-    "What would you like to know?"
-)
-NOT_IN_SOP_REPLY = (
-    "I'm sorry, I don't have that information. "
-    "I've noted your question so our team can follow up with you."
-)
-ESCALATION_REPLIES = {
-    "medical": (
-        "For your safety, medical questions are answered by our clinicians. "
-        "I've passed your question to the team and someone will contact you shortly."
-    ),
-    "price_negotiation": (
-        "Our prices start from £200 for Botox and £250 for fillers. "
-        "I've passed your request to our team, who can discuss pricing with you."
-    ),
-    "unanswered_limit": (
-        "I'm sorry I haven't been able to answer your questions. "
-        "I've passed this conversation to a member of our team, who will get back to you shortly."
-    ),
-    "error": (
-        "Sorry, I'm having trouble answering right now. "
-        "I've passed your message to our team, who will get back to you shortly."
-    ),
-}
-DEFAULT_ESCALATION_REPLY = (
-    "I'm sorry to hear that. I've passed your conversation to a member of our team, "
-    "who will get back to you shortly."
-)
 
 
 @dataclass
@@ -123,13 +81,6 @@ def is_question(text):
     return bool(words) and words[0] in QUESTION_WORDS
 
 
-def match_topics(text):
-    return [
-        topic for topic, patterns in _TOPIC_PATTERNS.items()
-        if any(p.search(text) for p in patterns)
-    ]
-
-
 def router_mode():
     return os.getenv("ROUTER_MODE", "llm").lower()
 
@@ -156,11 +107,11 @@ def _get_llm():
 
 
 def answer_from_sop(state):
-    """Ask the LLM to answer the latest user message using only the SOP.
+    """Ask the LLM to answer the latest user message using only the business SOP.
 
     Returns the answer text, or None if the SOP does not cover the question.
     """
-    messages = [SystemMessage(content=SYSTEM_PROMPT + "\n\nSOP DATA:\n" + SOP)]
+    messages = [SystemMessage(content=build_answer_prompt(state.business))]
     for role, text in state.transcript[-HISTORY_WINDOW:]:
         messages.append(HumanMessage(content=text) if role == "user" else AIMessage(content=text))
 
@@ -176,7 +127,8 @@ def answer_from_sop(state):
 
 def decide_rules(state, user_input, source="rules"):
     """Deterministic routing: keyword rules + simple heuristics."""
-    hit = match_escalation(user_input)
+    biz = state.business
+    hit = match_escalation(user_input, biz.escalation_rules)
     if hit:
         return Decision("escalate", source, category=hit[0], detail=f"matched '{hit[1]}'")
     if GREETING_RE.match(user_input):
@@ -185,10 +137,10 @@ def decide_rules(state, user_input, source="rules"):
         return Decision("thanks", source)
 
     question = is_question(user_input)
-    if state.pending_question and not question:
+    if state.pending_field and not question:
         return Decision("lead_answer", source)
 
-    topics = match_topics(user_input)
+    topics = biz.match_topics(user_input)
     if topics:
         return Decision("faq", source, topics=topics)
     if question:
@@ -201,9 +153,12 @@ def _decision_from_classification(state, result):
     topics = list(result.topics)
 
     if intent in ESCALATION_INTENTS:
+        if intent not in state.business.escalation_rules:
+            # Category disabled for this business: treat as an ordinary question.
+            return Decision("faq", "llm", confidence=conf, topics=topics)
         return Decision("escalate", "llm", category=intent, detail=f"intent={intent}", confidence=conf)
     if intent == "lead_answer":
-        action = "lead_answer" if state.pending_question else "smalltalk"
+        action = "lead_answer" if state.pending_field else "smalltalk"
         return Decision(action, "llm", confidence=conf)
     if intent == "out_of_scope":
         return Decision("unanswered", "llm", confidence=conf)
@@ -216,7 +171,8 @@ def decide(state, user_input):
     if SUMMARY_RE.match(user_input):
         return Decision("summary", "command")
 
-    guardrail = match_escalation(user_input, categories=GUARDRAIL_CATEGORIES)
+    biz = state.business
+    guardrail = match_escalation(user_input, biz.escalation_rules, categories=biz.guardrail_categories)
     if guardrail:
         return Decision("escalate", "guardrail", category=guardrail[0], detail=f"matched '{guardrail[1]}'")
 
@@ -230,8 +186,8 @@ def decide(state, user_input):
         return decide_rules(state, user_input, source="rules_fallback")
 
     logger.info(
-        "CLASSIFY session=%s intent=%s confidence=%.2f topics=%s",
-        state.session_id, result.intent, result.confidence, result.topics,
+        "CLASSIFY business=%s session=%s intent=%s confidence=%.2f topics=%s",
+        biz.id, state.session_id, result.intent, result.confidence, result.topics,
     )
     if result.confidence < classifier.CONFIDENCE_THRESHOLD:
         decision = decide_rules(state, user_input, source="rules_fallback")
@@ -247,48 +203,74 @@ def decide(state, user_input):
 
 def _with_pending_question(state, text):
     """Append the outstanding lead question (if any) so the flow keeps moving."""
-    pending = state.pending_question
+    pending = state.pending_field
     if pending:
-        return f"{text}\n\n{pending[1]}"
+        return f"{text}\n\n{pending.question}"
     return text
 
 
 def _escalate(state, decision, category=None):
+    biz = state.business
     category = category or decision.category
-    reason = label_for(category)
+    reason = biz.label_for(category)
     if decision.detail and category == decision.category:
         reason += f" ({decision.detail})"
     state.escalations.append(reason)
     logger.warning(
-        "ESCALATION session=%s category=%s source=%s reason=%s",
-        state.session_id, category, decision.source, reason,
+        "ESCALATION business=%s session=%s category=%s source=%s reason=%s",
+        biz.id, state.session_id, category, decision.source, reason,
     )
     return Reply(
-        ESCALATION_REPLIES.get(category, DEFAULT_ESCALATION_REPLY),
+        biz.escalation_reply(category),
         route="escalated", escalated=True, category=category, reason=reason,
     )
 
 
 def _record_unanswered(state, decision, user_input):
     state.unanswered.append(user_input)
-    logger.info("SOP_GAP session=%s question=%r", state.session_id, user_input)
+    logger.info("SOP_GAP business=%s session=%s question=%r", state.business.id, state.session_id, user_input)
     if len(state.unanswered) > MAX_UNANSWERED:
         return _escalate(state, decision, category="unanswered_limit")
-    return Reply(_with_pending_question(state, NOT_IN_SOP_REPLY), route="sop_gap")
+    return Reply(_with_pending_question(state, state.business.reply("not_in_sop")), route="sop_gap")
+
+
+def _extract_lead_values(state, user_input):
+    """LLM extraction in llm mode; the raw message for the pending field otherwise or on failure."""
+    pending = state.pending_field
+    if router_mode() == "llm":
+        try:
+            values = extractor.extract(state, user_input)
+            logger.info("EXTRACT session=%s values=%s", state.session_id, values)
+            if pending.name not in values and pending.type in ("phone", "choice"):
+                # Typed fields have strict validators, so the raw reply is a safe second try
+                # (e.g. a phone number the model missed). Free-text fields are not, so no fallback.
+                values[pending.name] = user_input
+            return values
+        except Exception:
+            logger.exception("Lead extraction failed session=%s; using raw answer", state.session_id)
+    return {pending.name: user_input}
 
 
 def _record_lead_answer(state, user_input):
-    field_name, _ = LEAD_QUESTIONS[state.lead_index]
-    state.lead[field_name] = user_input
-    state.lead_index += 1
-    logger.info("LEAD session=%s %s=%r", state.session_id, field_name, user_input)
+    biz = state.business
+    pending = state.pending_field
+    values = _extract_lead_values(state, user_input)
 
-    if state.pending_question:
-        return Reply(state.pending_question[1], route="lead_answer")
+    for f in state.missing_fields:
+        clean = extractor.validate(f, values.get(f.name))
+        if clean is not None:
+            state.lead[f.name] = clean
+            logger.info("LEAD business=%s session=%s %s=%r", biz.id, state.session_id, f.name, clean)
 
-    name = state.lead.get("name", "").split()[0] if state.lead.get("name") else ""
+    if pending.name not in state.lead:
+        return Reply(extractor.invalid_hint(pending), route="lead_retry")
+
+    if state.pending_field:
+        return Reply(state.pending_field.question, route="lead_answer")
+
+    first_name = state.lead.get("name", "").split()[0] if state.lead.get("name") else ""
     return Reply(
-        f"Thank you{', ' + name if name else ''}! Our team will contact you to confirm your booking.\n\n"
+        f"Thank you{', ' + first_name if first_name else ''}! {biz.lead.done}\n\n"
         "Type 'summary' to see a summary of this conversation.",
         route="lead_answer",
     )
@@ -304,31 +286,32 @@ def _answer_faq(state, decision, user_input):
     if answer is None:
         return _record_unanswered(state, decision, user_input)
 
-    topics = decision.topics or match_topics(user_input)
+    topics = decision.topics or state.business.match_topics(user_input)
     state.topics.extend(t for t in topics if t not in state.topics)
-    if not state.qualification_started:
-        state.lead_index = 0
-        return Reply(f"{answer}\n\nI'd be happy to help you book. {LEAD_QUESTIONS[0][1]}", route="answered")
+    if not state.lead_started:
+        state.lead_started = True
+        return Reply(f"{answer}\n\n{state.business.lead.intro} {state.pending_field.question}", route="answered")
     return Reply(_with_pending_question(state, answer), route="answered")
 
 
 def execute(state, decision, user_input):
+    biz = state.business
     action = decision.action
     if action == "summary":
         return Reply(generate_summary(state), route="summary")
     if action == "escalate":
         return _escalate(state, decision)
     if action == "greeting":
-        return Reply(_with_pending_question(state, GREETING_REPLY), route="greeting")
+        return Reply(_with_pending_question(state, biz.reply("greeting")), route="greeting")
     if action == "thanks":
-        return Reply(_with_pending_question(state, THANKS_REPLY), route="thanks")
+        return Reply(_with_pending_question(state, biz.reply("thanks")), route="thanks")
     if action == "lead_answer":
         return _record_lead_answer(state, user_input)
     if action == "faq":
         return _answer_faq(state, decision, user_input)
     if action == "unanswered":
         return _record_unanswered(state, decision, user_input)
-    return Reply(_with_pending_question(state, HELP_REPLY), route="smalltalk")
+    return Reply(_with_pending_question(state, biz.reply("help")), route="smalltalk")
 
 
 def get_response(state, user_input):

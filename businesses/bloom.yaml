@@ -1,0 +1,80 @@
+id: bloom
+name: Bloom Aesthetics Clinic
+theme_color: "#4a6cf7"
+
+sop: |
+  Business: Bloom Aesthetics Clinic
+
+  Hours:
+  Mon–Sat, 9 am–7 pm
+
+  Services:
+  - Botox (from £200)
+  - Fillers (from £250)
+  - Free consultations
+
+  Booking:
+  Via WhatsApp or website
+
+  Cancellation Policy:
+  24hr cancellation required
+
+  Escalate if:
+  - Complaint
+  - Medical question
+  - Pricing negotiation
+  - More than 2 unanswered questions
+
+# Topic -> regex patterns (word boundaries, case-insensitive). Used by the rule-based
+# router and to tag what the customer asked about.
+topics:
+  botox: ['botox']
+  fillers: ['fillers?', 'dermal']
+  consultations: ['consult(ation)?s?', 'free']
+  booking: ['book(ing|ed)?', 'appointments?', 'whatsapp', 'website', 'schedule']
+  opening hours: ['hours?', 'open(ing)?', 'clos(e|ed|ing)', 'timings?', '(mon|tues|wednes|thurs|fri|satur|sun)days?', 'weekends?', 'today', 'tomorrow']
+  cancellation: ['cancel(l?ation|l?ed|l?ing)?s?', 'reschedul(e|ing)']
+  pricing: ['prices?', 'pricing', 'costs?', 'how much', 'fees?', '£']
+  services: ['services?', 'treatments?', 'offer']
+
+escalation:
+  enabled: [complaint, human_request, legal, medical, price_negotiation]
+  guardrails: [medical, legal]   # keyword rules that always win over the classifier
+
+replies:
+  greeting: >-
+    Hello! Welcome to Bloom Aesthetics Clinic. I can help with our treatments, prices,
+    opening hours, booking and cancellations. What would you like to know?
+  help: >-
+    I can help with our treatments, prices, opening hours, booking and cancellations.
+    What would you like to know?
+  price_negotiation: >-
+    Our prices start from £200 for Botox and £250 for fillers. I've passed your request
+    to our team, who can discuss pricing with you.
+  medical: >-
+    For your safety, medical questions are answered by our clinicians. I've passed your
+    question to the team and someone will contact you shortly.
+
+lead:
+  intro: "I'd be happy to help you book."
+  done: "Our team will contact you to confirm your booking."
+  fields:
+    - name: name
+      label: Name
+      question: May I have your name, please?
+      description: The customer's name.
+    - name: treatment
+      label: Treatment of interest
+      type: choice
+      options: [Botox, Fillers, Free consultation]
+      question: Which treatment are you interested in (e.g. Botox, fillers, or a free consultation)?
+      description: The treatment the customer wants.
+    - name: preferred_time
+      label: Preferred time
+      question: What day and time would suit you for an appointment? We're open Mon–Sat, 9 am–7 pm.
+      description: When the customer would like the appointment, as they said it (day and/or time).
+    - name: contact
+      label: Contact
+      type: phone
+      question: What's the best phone number or WhatsApp to reach you on?
+      description: The customer's phone or WhatsApp number, digits only plus an optional leading +.

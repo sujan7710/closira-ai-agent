@@ -30,10 +30,8 @@ load_dotenv(ROOT / ".env")
 import chatbot  # noqa: E402
 import classifier  # noqa: E402
 from conversation import ConversationState  # noqa: E402
-from lead_qualification import LEAD_QUESTIONS  # noqa: E402
 
 CASES = json.loads((ROOT / "evals" / "routing_cases.json").read_text(encoding="utf-8"))
-FIELD_INDEX = {name: i for i, (name, _) in enumerate(LEAD_QUESTIONS)}
 
 
 class EvalError(Exception):
@@ -63,7 +61,7 @@ def run_mode(mode):
     for i, case in enumerate(CASES):
         state = ConversationState(session_id=f"eval-{mode}-{i}")
         if "pending" in case:
-            state.lead_index = FIELD_INDEX[case["pending"]]
+            state.start_lead_at(case["pending"])
         start = time.perf_counter()
         reply = chatbot.get_response(state, case["text"])
         elapsed = time.perf_counter() - start

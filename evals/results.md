@@ -1,11 +1,11 @@
 # Routing eval results
 
-Cases: 52 · model: `openai/gpt-oss-120b` · classifier: `openai/gpt-oss-120b` (see comparison below) · confidence threshold: 0.6
+Cases: 52 · model: `openai/gpt-oss-120b` · classifier: `openai/gpt-oss-20b` · confidence threshold: 0.6
 
 | Router | Accuracy | Escalation recall | False escalations | Hard cases (no keyword) | Avg latency |
 |---|---|---|---|---|---|
 | rules | **39/52 (75%)** | 7/16 | 1 | 1/14 | 0.24s |
-| llm | **51/52 (98%)** | 16/16 | 1 | 13/14 | 4.33s |
+| llm | **51/52 (98%)** | 16/16 | 1 | 13/14 | 3.17s |
 
 ## rules: failures
 
@@ -37,7 +37,7 @@ Decision sources: llm=47, guardrail=5
 
 ## Classifier model comparison
 
-Same 52 cases, LLM router, answering model `openai/gpt-oss-120b` in both runs.
+Same 52 cases, LLM router, answering model `openai/gpt-oss-120b` in both runs (measured before the multi-business refactor; the run above confirms no regression).
 
 | Classifier model | Accuracy | Escalation recall | Avg latency (classify + answer) |
 |---|---|---|---|

@@ -25,6 +25,10 @@ def llm_mode(monkeypatch):
         return box["result"]
 
     monkeypatch.setattr(chatbot.classifier, "classify", fake_classify)
+    # Extraction: return the message as the pending field's value.
+    monkeypatch.setattr(
+        chatbot.extractor, "extract", lambda state, msg: {state.pending_field.name: msg}
+    )
 
     def set_result(intent=None, confidence=0.95, topics=(), error=None):
         box["result"] = error or Classification(intent=intent, confidence=confidence, topics=list(topics))
@@ -83,7 +87,7 @@ def test_lead_answer_only_when_question_pending(llm_mode):
     llm_mode("lead_answer", 0.9)
     state = ConversationState("s")
     assert say(state, "Sam").route == "smalltalk"   # nothing pending
-    state.lead_index = 0
+    state.start_lead_at("name")
     assert say(state, "Sam").route == "lead_answer"
     assert state.lead["name"] == "Sam"
 

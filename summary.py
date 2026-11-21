@@ -1,7 +1,5 @@
 """Conversation summary built from the tracked conversation state."""
 
-from lead_qualification import FIELD_LABELS, LEAD_QUESTIONS
-
 
 def _bullets(items, empty):
     return "\n".join(f"- {item}" for item in items) if items else f"- {empty}"
@@ -12,9 +10,13 @@ def recommended_action(state):
         return "Human agent to follow up (escalated: " + "; ".join(state.escalations) + ")."
     if state.qualification_complete:
         lead = state.lead
+        details = ", ".join(
+            f"{f.label.lower()}: {lead[f.name]}" for f in state.business.lead_fields
+            if f.name not in ("name", "contact")
+        )
         return (
             f"Contact {lead.get('name', 'the customer')} on {lead.get('contact', 'their contact details')} "
-            f"to book {lead.get('treatment', 'a treatment')} ({lead.get('preferred_time', 'time TBC')})."
+            f"to confirm the booking ({details})."
         )
     if state.qualification_started:
         return "Lead qualification incomplete; follow up to collect the missing details."
@@ -25,8 +27,8 @@ def generate_summary(state):
     user_turns = sum(1 for role, _ in state.transcript if role == "user")
 
     lead_lines = [
-        f"{FIELD_LABELS[field]}: {state.lead.get(field, '(not provided)')}"
-        for field, _ in LEAD_QUESTIONS
+        f"{f.label}: {state.lead.get(f.name, '(not provided)')}"
+        for f in state.business.lead_fields
     ] if state.qualification_started else []
 
     status = (
@@ -37,6 +39,7 @@ def generate_summary(state):
 
     return f"""Conversation Summary
 ---------------------
+Business: {state.business.name}
 Customer messages: {user_turns}
 
 Topics asked about:

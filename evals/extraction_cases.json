@@ -1,0 +1,22 @@
+[
+  {"business": "bloom", "pending": "name", "text": "Sam Patel", "expect": {"name": "Sam Patel"}},
+  {"business": "bloom", "pending": "name", "text": "It's Priya", "expect": {"name": "Priya"}},
+  {"business": "bloom", "pending": "name", "text": "my name is Tom and I'd like botox", "expect": {"name": "Tom", "treatment": "Botox"}},
+  {"business": "bloom", "pending": "name", "text": "probably the lip fillers... actually, my name is Priya", "expect": {"name": "Priya", "treatment": "Fillers"}},
+  {"business": "bloom", "pending": "name", "text": "Jo Brown, fillers please, Saturday at 2", "expect": {"name": "Jo Brown", "treatment": "Fillers", "preferred_time": {"contains": "saturday"}}},
+  {"business": "bloom", "pending": "treatment", "text": "Botox", "expect": {"treatment": "Botox"}},
+  {"business": "bloom", "pending": "treatment", "text": "probably the lip fillers", "expect": {"treatment": "Fillers"}},
+  {"business": "bloom", "pending": "treatment", "text": "I'd like to chat to someone first, the free one", "expect": {"treatment": "Free consultation"}},
+  {"business": "bloom", "pending": "treatment", "text": "something for my forehead wrinkles", "expect": {}},
+  {"business": "bloom", "pending": "preferred_time", "text": "Saturday morning works", "expect": {"preferred_time": {"contains": "saturday"}}},
+  {"business": "bloom", "pending": "preferred_time", "text": "any weekday after 5pm, my number is 07700 900123", "expect": {"preferred_time": {"contains": "5"}, "contact": "07700900123"}},
+  {"business": "bloom", "pending": "contact", "text": "07700 900123", "expect": {"contact": "07700900123"}},
+  {"business": "bloom", "pending": "contact", "text": "you can whatsapp me on +44 7700 900456", "expect": {"contact": "+447700900456"}},
+  {"business": "bloom", "pending": "contact", "text": "I'd rather not share that", "expect": {}},
+  {"business": "brightside", "pending": "name", "text": "Ahmed Khan here", "expect": {"name": "Ahmed Khan"}},
+  {"business": "brightside", "pending": "treatment", "text": "my teeth need a good clean", "expect": {"treatment": "Hygienist clean"}},
+  {"business": "brightside", "pending": "treatment", "text": "I want them whiter for my wedding", "expect": {"treatment": "Teeth whitening"}},
+  {"business": "brightside", "pending": "visited_before", "text": "yes, I came in last year", "expect": {"visited_before": "Yes"}},
+  {"business": "brightside", "pending": "visited_before", "text": "nope, this would be my first time", "expect": {"visited_before": "No"}},
+  {"business": "brightside", "pending": "visited_before", "text": "I've been a patient for years, call me on 020 7946 0999", "expect": {"visited_before": "Yes", "contact": "02079460999"}}
+]

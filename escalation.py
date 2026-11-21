@@ -1,19 +1,22 @@
 """Rule-based escalation detection.
 
-Each rule has a category code, a human-readable label and regex patterns.
-Patterns are matched on word boundaries, and a match is ignored when it is
-negated within the few preceding words ("I'm not angry", "no complaint").
+BASE_RULES is a library of escalation categories. Each business enables the ones
+it needs, can add extra patterns per category, and can define custom categories
+(e.g. "insurance" for a dental practice) in its YAML config.
+
+Patterns are matched on word boundaries, and a match is ignored when it is negated
+within the few preceding words ("I'm not angry", "no complaint").
 
 The rules serve two purposes:
-  * GUARDRAIL categories (medical, legal) are always enforced, even when the LLM
-    classifier disagrees: missing one of these is far costlier than a false alarm.
-  * All rules form the deterministic fallback router when the LLM classifier is
-    unavailable or not confident.
+  * guardrail categories (per business, e.g. medical and legal) are always enforced,
+    even when the LLM classifier disagrees: missing one is far costlier than a false alarm.
+  * all enabled rules form the deterministic fallback router when the LLM classifier
+    is unavailable or not confident.
 """
 
 import re
 
-ESCALATION_RULES = {
+BASE_RULES = {
     "complaint": ("Complaint or frustration", [
         r"angry", r"furious", r"upset", r"annoyed", r"frustrat\w*",
         r"complain\w*", r"terrible", r"awful", r"horrible", r"worst",
@@ -38,11 +41,8 @@ ESCALATION_RULES = {
     ]),
 }
 
-# Categories the rules enforce regardless of what the classifier says.
-GUARDRAIL_CATEGORIES = {"medical", "legal"}
-
 # Labels for escalations that do not come from keyword rules.
-EXTRA_LABELS = {
+SYSTEM_LABELS = {
     "unanswered_limit": "More than 2 unanswered questions",
     "error": "Assistant error (LLM unavailable)",
 }
@@ -50,16 +50,34 @@ EXTRA_LABELS = {
 NEGATIONS = {"not", "no", "never", "dont", "don't", "isnt", "isn't", "wasnt", "wasn't", "without"}
 NEGATION_WINDOW = 3  # words before the trigger that are checked for a negation
 
-_COMPILED = {
-    code: [re.compile(rf"\b{p}\b", re.IGNORECASE) for p in patterns]
-    for code, (_, patterns) in ESCALATION_RULES.items()
-}
+
+def compile_patterns(patterns):
+    return [re.compile(rf"\b{p}\b", re.IGNORECASE) for p in patterns]
 
 
-def label_for(category):
-    if category in ESCALATION_RULES:
-        return ESCALATION_RULES[category][0]
-    return EXTRA_LABELS.get(category, category)
+def build_rules(enabled=None, extra_patterns=None, custom=None):
+    """Return {code: (label, [compiled patterns])} for one business."""
+    enabled = list(BASE_RULES) if enabled is None else enabled
+    extra_patterns = extra_patterns or {}
+    rules = {}
+    for code in enabled:
+        label, patterns = BASE_RULES[code]
+        rules[code] = (label, compile_patterns(patterns + extra_patterns.get(code, [])))
+    for code, spec in (custom or {}).items():
+        rules[code] = (spec["label"], compile_patterns(spec["patterns"] + extra_patterns.get(code, [])))
+    return rules
+
+
+DEFAULT_RULES = build_rules()
+
+
+def label_for(category, rules=None):
+    rules = DEFAULT_RULES if rules is None else rules
+    if category in rules:
+        return rules[category][0]
+    if category in BASE_RULES:
+        return BASE_RULES[category][0]
+    return SYSTEM_LABELS.get(category, category)
 
 
 def _is_negated(text, start):
@@ -67,9 +85,10 @@ def _is_negated(text, start):
     return any(word in NEGATIONS for word in preceding)
 
 
-def match_escalation(user_input, categories=None):
+def match_escalation(user_input, rules=None, categories=None):
     """Return (category, matched_text) for the first rule that fires, else None."""
-    for code, patterns in _COMPILED.items():
+    rules = DEFAULT_RULES if rules is None else rules
+    for code, (_, patterns) in rules.items():
         if categories is not None and code not in categories:
             continue
         for pattern in patterns:
@@ -79,10 +98,10 @@ def match_escalation(user_input, categories=None):
     return None
 
 
-def check_escalation(user_input):
+def check_escalation(user_input, rules=None):
     """Return (True, reason) if the message must go to a human, else (False, None)."""
-    hit = match_escalation(user_input)
+    hit = match_escalation(user_input, rules)
     if hit is None:
         return False, None
     code, matched = hit
-    return True, f"{label_for(code)} (matched '{matched}')"
+    return True, f"{label_for(code, rules)} (matched '{matched}')"

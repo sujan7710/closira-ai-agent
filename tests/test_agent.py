@@ -10,7 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import chatbot  # noqa: E402
 from conversation import ConversationState  # noqa: E402
 from escalation import check_escalation  # noqa: E402
-from lead_qualification import LEAD_QUESTIONS  # noqa: E402
+from business import get_business  # noqa: E402
+
+NAME_Q = get_business("bloom").lead_field("name").question
 
 
 @pytest.fixture(autouse=True)
@@ -131,7 +133,7 @@ def test_llm_failure_escalates_gracefully(monkeypatch):
 def test_full_lead_flow_and_summary():
     state = new_state()
     first = say(state, "How much is Botox?")
-    assert "£200" in first.text and LEAD_QUESTIONS[0][1] in first.text
+    assert "£200" in first.text and NAME_Q in first.text
 
     say(state, "Sam Patel")
     say(state, "Botox")  # topic keyword, but it's an answer to the pending question
@@ -140,13 +142,13 @@ def test_full_lead_flow_and_summary():
     assert "Thank you, Sam" in done.text
     assert state.lead == {
         "name": "Sam Patel", "treatment": "Botox",
-        "preferred_time": "Saturday 3pm", "contact": "07700 900123",
+        "preferred_time": "Saturday 3pm", "contact": "07700900123",
     }
 
     summary = say(state, "summary").text
     assert "Lead qualification (Complete)" in summary
     assert "botox" in summary and "pricing" in summary
-    assert "Contact Sam Patel on 07700 900123" in summary
+    assert "Contact Sam Patel on 07700900123" in summary
 
 
 def test_question_during_qualification_reasks_pending_question():
@@ -154,7 +156,7 @@ def test_question_during_qualification_reasks_pending_question():
     say(state, "How much is Botox?")
     reply = say(state, "How do I book?")
     assert "WhatsApp" in reply.text
-    assert reply.text.endswith(LEAD_QUESTIONS[0][1])
+    assert reply.text.endswith(NAME_Q)
     assert state.lead == {}
 
 

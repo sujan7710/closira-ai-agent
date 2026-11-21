@@ -1,69 +1,85 @@
 # Closira AI Customer Support Agent
 
-An AI support agent for a small business (Bloom Aesthetics Clinic). It answers FAQs strictly from the clinic's SOP, qualifies leads for booking, hands off to a human when the SOP says it must, and produces a structured summary for the team.
+A multi-business AI support agent for small businesses. Each business is a YAML file. The agent answers FAQs strictly from that business's SOP, qualifies leads, hands off to a human when the SOP says it must, and gives staff an inbox of handoffs, leads and unanswered questions.
 
-Built with Flask, LangChain and Groq (`openai/gpt-oss-120b` by default).
+Two demo businesses are included: **Bloom Aesthetics Clinic** and **Brightside Dental Studio**.
+
+Built with Flask, LangChain, Groq (`gpt-oss-120b` for answers, `gpt-oss-20b` for classification and extraction) and SQLite.
 
 ## Results
 
-On a 52-case routing eval run end to end against the real model ([evals/results.md](evals/results.md)):
+Measured end to end against the real model ([evals/](evals/)):
 
-| Router | Accuracy | Escalations caught | Cases with no trigger keyword |
-|---|---|---|---|
-| Keyword rules (v1) | 75% | 7/16 | 1/14 |
-| LLM intent classifier (v2) | **98%** | **16/16** | **13/14** |
+| Eval | Keyword rules / raw answers | LLM |
+|---|---|---|
+| Routing, 52 cases ([results](evals/results.md)) | 75% | **98%** |
+| Escalations caught | 7/16 | **16/16** |
+| Lead extraction, 20 cases ([results](evals/extraction_results.md)) | 55% | **90%** |
+| Multi-field lead replies ("Jo Brown, fillers, Saturday at 2") | 0/5 | **5/5** |
 
 ## Features
 
-- **LLM intent classifier.** Each message is classified into one of 11 intents with a confidence score. The output is a typed Pydantic model returned through Groq's JSON-schema structured output. The classifier sees recent context and any pending lead question, so "Botox" in reply to "Which treatment?" counts as a lead answer, not an FAQ.
-- **Confidence threshold with a rule-based fallback.** If the classifier errors or its confidence is below 0.6, the deterministic keyword router decides instead. The agent never stops working because the classifier did.
-- **Guardrails.** Medical and legal keyword rules always win, even over a confident classifier. Missing a medical question is far worse than a false alarm.
-- **Routing trace.** Every reply carries what happened, who decided (`llm`, `guardrail`, `rules_fallback`) and the classifier's confidence. The trace is returned by the API, shown under each message in the UI, and logged.
-- **SOP-grounded answers.** The LLM may only use facts from the SOP. If the SOP doesn't cover a question, the model returns a sentinel token (`NO_SOP_ANSWER`) and the code shows a fixed reply. The model never writes free text for questions it can't answer.
-- **Escalation.** Complaints, requests for a human, legal threats, medical questions and pricing negotiation are handed off to a human, with the reason recorded. Negations are handled ("I'm not angry" does not escalate).
-- **SOP gap tracking.** Unanswered questions are logged. On the third one the conversation escalates, as the SOP requires ("more than 2 unanswered questions").
-- **Lead qualification.** After the first answered question, the agent collects name, treatment, preferred time and contact. If the customer asks something mid-flow, it answers and then repeats the pending question.
-- **Structured summary.** Built from the tracked state: topics, lead details, SOP gaps, escalation reasons and a recommended next action.
-- **Per-user sessions.** Each browser gets its own conversation through a signed session cookie.
-- **Safe UI.** Messages are rendered with `textContent` (no XSS). Errors and escalation badges are shown. There are New chat and Summary buttons.
-- **Logging.** Every escalation, SOP gap and lead field is logged with its session ID.
+**Multi-business**
+- **One YAML file per business** ([businesses/](businesses/)). It holds the SOP, topic keywords, which escalation categories are on, guardrails, custom categories, customer-facing replies, lead fields and the theme colour. Adding a business needs no code changes.
+- **Validated on load.** Pydantic rejects broken configs at startup: a choice field with no options, a guardrail that isn't enabled, an invalid theme colour.
+- **Custom escalation categories.** The dental practice adds an `insurance` category with its own patterns and reply, plus dental medical keywords (toothache, bleeding, abscess).
+- `/b/<business>` serves a branded chat page for each business, and sessions, tickets and leads are kept separate per business.
 
-## Message routing
+**Staff inbox (`/admin`)**
+- **Handoff tickets.** Every escalation opens a ticket with its reasons, the lead details and the full transcript. There is one ticket per conversation: later escalations add a reason, and the transcript keeps updating while the ticket is open. Staff close tickets with a resolution note.
+- **Leads.** Partial and complete leads, with labelled fields.
+- **SOP gap report.** Questions the agent couldn't answer, grouped and ranked by how often they were asked. It tells the business what to add to its SOP.
+- **Security.** HTTP Basic auth via `ADMIN_PASSWORD`. Without a password the inbox only answers on localhost. The close form is CSRF-protected, redirects can't leave the site, and customer text is HTML-escaped.
 
-Each message goes through two steps: **decide** (produce a `Decision`) and **execute** (produce a `Reply`).
+**Agent**
+- **LLM intent classifier.** Each message is sorted into one of 11 intents with a confidence score, as a typed Pydantic model returned through Groq's JSON-schema structured output. It sees recent context and the pending lead question.
+- **Confidence threshold with a rule-based fallback.** If the classifier errors or its confidence is below 0.6, the keyword router decides instead.
+- **Guardrails.** Each business's guardrail rules (Bloom: medical and legal; dental: those plus insurance) always win, even over a confident classifier.
+- **LLM lead extraction with deterministic validation.** The LLM pulls every field the customer states ("probably the lip fillers… actually my name is Priya" gives name = Priya and treatment = Fillers). Code then validates each value: phone numbers are normalised, and choices must map to a configured option. An invalid value gets a specific retry prompt ("Please choose Botox, Fillers or Free consultation").
+- **SOP-grounded answers.** When the SOP doesn't cover a question, the model must return a sentinel token (`NO_SOP_ANSWER`). The code shows a fixed reply, records an SOP gap, and escalates on the third gap.
+- **Routing trace.** Every reply carries what happened, who decided (`llm`, `guardrail`, `rules_fallback`) and the classifier's confidence. It's shown in the UI and the API response and is logged.
+- **Structured summary**, **per-user sessions**, **XSS-safe UI**, and logging of every escalation, gap and lead field.
+
+## How a message is handled
 
 ```
 decide(message)
   ├─ "summary"                                → summary                       source=command
-  ├─ medical / legal guardrail rule matched    → escalate                      source=guardrail
+  ├─ business guardrail rule matched           → escalate                      source=guardrail
   ├─ LLM classifier, confidence ≥ 0.6          → action for the intent        source=llm
   └─ classifier error or low confidence        → keyword rules decide          source=rules_fallback
 
 execute(decision)
-  ├─ escalate     → handoff reply, reason logged
+  ├─ escalate     → handoff reply from config, reason logged
   ├─ faq          → answer from the SOP (NO_SOP_ANSWER sentinel → SOP gap)
   ├─ unanswered   → SOP gap (3rd gap → escalate)
-  ├─ lead_answer  → store the answer, ask the next question
-  └─ greeting / thanks / smalltalk → fixed reply (+ pending lead question)
+  ├─ lead_answer  → LLM extraction → validators → next missing field, or a retry prompt
+  └─ greeting / thanks / smalltalk → reply from config (+ pending lead question)
+
+web layer → storage.record_turn()  → tickets / leads / sop_gaps (SQLite)
 ```
 
-Set `ROUTER_MODE=rules` to run the keyword router only. The eval uses this as its baseline.
+The agent itself never touches the database. The web layer saves each turn, so the agent stays easy to test, and a database failure never breaks the customer's chat.
+
+`ROUTER_MODE=rules` runs without the classifier and extractor. The evals use it as their baseline.
 
 ## Project structure
 
 ```
-app.py                 Flask app: /, /chat, /reset; input validation, sessions
+app.py                 Flask: chat pages per business, /chat, /reset, /admin inbox
+business.py            Business config models (Pydantic) and loader
+businesses/*.yaml      One file per business
 chatbot.py             decide() / execute() router and the SOP-answering LLM call
-classifier.py          LLM intent classifier (Pydantic structured output)
-evals/                 Labelled routing cases, eval runner, results.md
-conversation.py        ConversationState + thread-safe in-memory SessionStore
-escalation.py          Escalation rules with negation handling
-lead_qualification.py  Lead questions and field labels
-summary.py             Structured summary from conversation state
-prompts.py             System prompt and NO_SOP_ANSWER sentinel
-sop_data.py            SOP text and topic keywords
-templates/, static/    Chat UI
-tests/                 pytest suite (LLM mocked, runs offline)
+classifier.py          LLM intent classifier (topics typed per business)
+extractor.py           LLM lead extraction + phone/choice validators
+escalation.py          Escalation rule library with negation handling
+storage.py             SQLite: tickets, leads, SOP gaps, gap report
+conversation.py        ConversationState + in-memory SessionStore
+summary.py             Structured summary
+prompts.py             Answering prompt and NO_SOP_ANSWER sentinel
+templates/, static/    Chat UI and staff inbox
+tests/                 pytest suite (LLM faked, runs offline)
+evals/                 Routing and extraction evals with results
 test_transcripts/      Sample conversations recorded against the real model
 scripts/check_groq.py  Checks that your Groq API key works
 ```
@@ -82,9 +98,13 @@ Create `.env`:
 
 ```
 GROQ_API_KEY=your_api_key
-FLASK_SECRET_KEY=any-long-random-string   # optional; random per process if unset
+FLASK_SECRET_KEY=any-long-random-string   # recommended; random per process if unset
+ADMIN_PASSWORD=choose-one                 # required for /admin outside localhost
+DEFAULT_BUSINESS=bloom                    # optional
+CLOSIRA_DB=closira.db                     # optional: SQLite file
 GROQ_MODEL=openai/gpt-oss-120b            # optional: answering model
-GROQ_CLASSIFIER_MODEL=openai/gpt-oss-20b  # optional: classifier model
+GROQ_CLASSIFIER_MODEL=openai/gpt-oss-20b  # optional
+GROQ_EXTRACTOR_MODEL=openai/gpt-oss-20b   # optional (defaults to the classifier model)
 CLASSIFIER_CONFIDENCE_THRESHOLD=0.6       # optional
 ROUTER_MODE=llm                           # optional: llm | rules
 ```
@@ -92,9 +112,12 @@ ROUTER_MODE=llm                           # optional: llm | rules
 Run:
 
 ```bash
-python scripts/check_groq.py   # optional: confirm the key works
-python app.py                  # http://127.0.0.1:5000  (set FLASK_DEBUG=1 for debug mode)
+python app.py        # chat: http://127.0.0.1:5000   inbox: http://127.0.0.1:5000/admin
 ```
+
+### Adding a business
+
+Copy `businesses/bloom.yaml`, change the `id`, SOP, topics, replies and lead fields, and restart. It appears at `/b/<id>`, in the business switcher and in the inbox filters.
 
 ## Tests
 
@@ -102,36 +125,42 @@ python app.py                  # http://127.0.0.1:5000  (set FLASK_DEBUG=1 for d
 python -m pytest -q
 ```
 
-The suite covers:
+There are 74 tests covering:
 
-- escalation rules, including negation and false-positive cases
-- both routers
-- the 3-unanswered-questions rule
-- LLM and classifier failure fallbacks, the low-confidence fallback, and guardrail precedence
-- the full lead flow and summary
-- session isolation between two clients
-- API input validation
+- routing in both modes and the fallbacks
+- guardrails, including custom business guardrails
+- config validation
+- phone and choice validators
+- multi-field extraction and invalid-value retry prompts
+- ticket deduplication and transcript updates
+- the gap report, and keeping businesses separate
+- inbox auth (localhost-only and password), CSRF, open-redirect and HTML escaping
 
-The LLM and the classifier are replaced with fakes, so the tests are fast and need no API key.
+A `conftest.py` fixture removes the API key and the cached model clients for every test, so no test can reach the network.
 
 ## Evals
 
 ```bash
-python evals/run_routing_eval.py                # rules vs llm, writes evals/results.md
-python evals/run_routing_eval.py --modes llm
+python evals/run_routing_eval.py       # rules vs llm routing → evals/results.md
+python evals/run_extraction_eval.py    # raw vs LLM lead extraction → evals/extraction_results.md
 ```
 
-[evals/routing_cases.json](evals/routing_cases.json) holds 52 labelled messages. 14 of them are hard cases written to beat keywords: paraphrases ("I want my money back"), aftercare questions with no medical keyword, below-list-price offers ("Botox for £150?"), and lead answers that start with a question word ("any time after 5 is good"). Each case is scored on what the agent actually did end to end (answered, SOP gap, escalated and why, lead answer recorded). Rate-limited calls are retried, so a 429 can't quietly turn into a fallback route.
+**Routing** uses 52 labelled messages, 14 of them written to beat keywords: paraphrases, aftercare questions with no medical keyword, below-list-price offers, and lead answers that start with a question word.
+
+**Extraction** uses 20 lead replies across both businesses. A case passes only if every expected field is stored correctly after validation and nothing else is filled in.
+
+Rate-limited calls are retried in both evals, so a 429 can't quietly turn into a fallback result.
 
 ## Known limitations / next steps
 
-- The guardrail is deliberately strict. "Is it safe to pay by card?" escalates as medical because of the word "safe". This is the one remaining eval failure, accepted on purpose.
-- The LLM router adds a classification call, so a FAQ reply takes about 3.5s (classify + answer) against about 0.3s with rules only. Next step: merge classification and answering into one call for FAQs, or stream replies.
-- Sessions are stored in memory (single process, cleared on restart). Production would use Redis or a database.
-- Escalations are logged but don't create tickets yet. Planned: persist handoff tickets and add an admin view.
-- The SOP is a Python string. Planned: load it from per-business config (YAML/JSON).
+- The guardrail is deliberately strict. "Is it safe to pay by card?" escalates as medical because of the word "safe".
+- A FAQ reply takes about 3s (classify, then answer). Next: one combined call, or streaming.
+- Lead extraction is 90%. It sometimes infers a treatment that wasn't requested ("forehead wrinkles → Botox").
+- The gap report groups exact (normalised) wording. Next: cluster similar questions with embeddings.
+- Staff can resolve tickets but can't reply into the customer's chat yet.
+- Chat sessions are kept in memory and SQLite is single-node. Production would use Redis and Postgres.
 
-Note: Groq is used as the LLM provider. The workflow is provider-agnostic: the LangChain chat model in `chatbot.py` and `classifier.py` can be swapped for OpenAI or Anthropic.
+Note: Groq is used as the LLM provider. The workflow is provider-agnostic: the LangChain chat models can be swapped for OpenAI or Anthropic.
 
 ## Author
 

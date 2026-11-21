@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Staff Inbox</title>
+    <style>
+        :root { --ink: #1d2939; --muted: #667085; --line: #e4e7ec; --bg: #f5f7fa; --brand: #4a6cf7; --warn: #b54708; --ok: #067647; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Arial, sans-serif; color: var(--ink); background: var(--bg); }
+        header { background: #101828; color: #fff; padding: 16px 24px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+        header h1 { margin: 0; font-size: 20px; }
+        header a { color: #c7d2fe; font-size: 14px; }
+        main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+        .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+        .filters a { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); text-decoration: none; font-size: 14px; }
+        .filters a.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+        .stat { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+        .stat .n { font-size: 28px; font-weight: bold; }
+        .stat .l { color: var(--muted); font-size: 13px; margin-top: 4px; }
+        section { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; }
+        h2 { font-size: 17px; margin: 0 0 12px; }
+        .muted { color: var(--muted); font-size: 13px; }
+        .ticket { border-top: 1px solid var(--line); padding: 14px 0; }
+        .ticket:first-of-type { border-top: 0; }
+        .ticket-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; justify-content: space-between; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; background: #fef0c7; color: var(--warn); }
+        .tag.closed { background: #dcfae6; color: var(--ok); }
+        .tag.biz { background: #eef2ff; color: #3538cd; }
+        ul.reasons { margin: 6px 0; padding-left: 18px; font-size: 14px; }
+        .lead { font-size: 14px; margin: 6px 0; }
+        details { margin-top: 6px; }
+        summary { cursor: pointer; color: var(--brand); font-size: 14px; }
+        .transcript { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+        .msg { padding: 8px 12px; border-radius: 8px; font-size: 14px; white-space: pre-wrap; max-width: 85%; }
+        .msg.user { background: #eef2ff; align-self: flex-end; }
+        .msg.assistant { background: #f2f4f7; align-self: flex-start; }
+        form.close { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        form.close input[type=text] { flex: 1; min-width: 200px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 14px; }
+        form.close button { padding: 8px 14px; border: 0; border-radius: 6px; background: var(--brand); color: #fff; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+        th { color: var(--muted); font-weight: normal; font-size: 12px; text-transform: uppercase; border-top: 0; }
+        .scroll { overflow-x: auto; }
+        .banner { background: #fef0c7; color: var(--warn); padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Staff Inbox</h1>
+    <a href="{{ url_for('home') }}">Open customer chat →</a>
+</header>
+
+<main>
+    {% if not protected %}
+        <div class="banner">No ADMIN_PASSWORD is set, so this inbox is only reachable from this machine. Set one before deploying.</div>
+    {% endif %}
+
+    <nav class="filters" aria-label="Business">
+        <a href="{{ url_for('admin', status=status) }}" class="{{ 'active' if not business_id }}">All businesses</a>
+        {% for id, b in businesses.items() %}
+            <a href="{{ url_for('admin', business=id, status=status) }}" class="{{ 'active' if business_id == id }}">{{ b.name }}</a>
+        {% endfor %}
+    </nav>
+
+    <div class="stats">
+        <div class="stat"><div class="n">{{ stats.open_tickets }}</div><div class="l">Open handoffs</div></div>
+        <div class="stat"><div class="n">{{ stats.closed_tickets }}</div><div class="l">Resolved handoffs</div></div>
+        <div class="stat"><div class="n">{{ stats.complete_leads }}</div><div class="l">Complete leads</div></div>
+        <div class="stat"><div class="n">{{ stats.partial_leads }}</div><div class="l">Partial leads</div></div>
+        <div class="stat"><div class="n">{{ stats.sop_gaps }}</div><div class="l">Unanswered questions</div></div>
+    </div>
+
+    <section>
+        <h2>Handoffs</h2>
+        <nav class="filters" aria-label="Status">
+            {% for s in ['open', 'closed', 'all'] %}
+                <a href="{{ url_for('admin', business=business_id, status=s) }}" class="{{ 'active' if status == s }}">{{ s|capitalize }}</a>
+            {% endfor %}
+        </nav>
+
+        {% for t in tickets %}
+            <div class="ticket">
+                <div class="ticket-head">
+                    <div>
+                        <strong>#{{ t.id }}</strong>
+                        <span class="tag {{ 'closed' if t.status == 'closed' }}">{{ t.status }}</span>
+                        <span class="tag biz">{{ businesses[t.business_id].name if t.business_id in businesses else t.business_id }}</span>
+                    </div>
+                    <span class="muted">Opened {{ t.created_at|datetime }} · updated {{ t.updated_at|datetime }}</span>
+                </div>
+                <ul class="reasons">
+                    {% for r in t.reasons %}<li>{{ r }}</li>{% endfor %}
+                </ul>
+                {% if t.lead %}
+                    <div class="lead"><strong>Lead:</strong>
+                        {% set tbiz = businesses.get(t.business_id) %}
+                        {% for k, v in t.lead.items() %}{% set f = tbiz.lead_field(k) if tbiz else none %}{{ f.label if f else k }}: {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}
+                    </div>
+                {% endif %}
+                <details>
+                    <summary>Transcript ({{ t.transcript|length }} messages)</summary>
+                    <div class="transcript">
+                        {% for role, text in t.transcript %}
+                            <div class="msg {{ role }}">{{ text }}</div>
+                        {% endfor %}
+                    </div>
+                </details>
+                {% if t.status == 'open' %}
+                    <form class="close" method="post" action="{{ url_for('close_ticket', ticket_id=t.id) }}">
+                        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+                        <input type="hidden" name="next" value="{{ request.full_path }}">
+                        <input type="text" name="resolution" placeholder="Resolution note (e.g. called customer, booked for Sat)" maxlength="500">
+                        <button type="submit">Mark resolved</button>
+                    </form>
+                {% elif t.resolution %}
+                    <p class="muted">Resolution: {{ t.resolution }}</p>
+                {% endif %}
+            </div>
+        {% else %}
+            <p class="muted">No {{ status if status != 'all' }} handoffs.</p>
+        {% endfor %}
+    </section>
+
+    <section>
+        <h2>Leads</h2>
+        <div class="scroll">
+        <table>
+            <thead><tr><th>Business</th><th>Details</th><th>Status</th><th>Updated</th></tr></thead>
+            <tbody>
+            {% for l in leads %}
+                <tr>
+                    <td>{{ businesses[l.business_id].name if l.business_id in businesses else l.business_id }}</td>
+                    <td>
+                        {% set biz = businesses.get(l.business_id) %}
+                        {% for k, v in l.fields.items() %}
+                            {% set f = biz.lead_field(k) if biz else none %}{{ f.label if f else k }}: <strong>{{ v }}</strong>{% if not loop.last %}<br>{% endif %}
+                        {% endfor %}
+                    </td>
+                    <td><span class="tag {{ 'closed' if l.complete }}">{{ 'complete' if l.complete else 'partial' }}</span></td>
+                    <td class="muted">{{ l.updated_at|datetime }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="4" class="muted">No leads yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </section>
+
+    <section>
+        <h2>SOP gap report</h2>
+        <p class="muted">Questions the agent could not answer from the SOP, most asked first. Adding these answers to the SOP would cut handoffs.</p>
+        <div class="scroll">
+        <table>
+            <thead><tr><th>Question</th><th>Times asked</th><th>Conversations</th><th>Last asked</th></tr></thead>
+            <tbody>
+            {% for g in gaps %}
+                <tr><td>{{ g.example }}</td><td>{{ g.count }}</td><td>{{ g.conversations }}</td><td class="muted">{{ g.last_asked|datetime }}</td></tr>
+            {% else %}
+                <tr><td colspan="4" class="muted">No unanswered questions recorded.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </section>
+</main>
+
+</body>
+</html>

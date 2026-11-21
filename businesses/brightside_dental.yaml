@@ -1,0 +1,99 @@
+id: brightside
+name: Brightside Dental Studio
+theme_color: "#0f9d8a"
+
+sop: |
+  Business: Brightside Dental Studio
+
+  Hours:
+  Mon–Fri, 8 am–6 pm
+  Sat, 9 am–1 pm
+  Closed Sundays
+
+  Services:
+  - Check-up (£60)
+  - Hygienist clean (£75)
+  - Teeth whitening (from £300)
+  - Same-day emergency appointments (call before 10 am)
+
+  Booking:
+  By phone on 020 7946 0321 or via our website
+
+  Cancellation Policy:
+  48hr notice required, otherwise a £25 fee applies
+
+  Payment:
+  Card, Apple Pay and Google Pay. No cash.
+
+  Escalate if:
+  - Complaint
+  - Dental pain, bleeding, swelling or any clinical question
+  - Insurance or payment plan queries
+  - Pricing negotiation
+  - More than 2 unanswered questions
+
+topics:
+  check-up: ['check[- ]?ups?', 'exam(ination)?s?']
+  hygiene: ['hygien(e|ist)', 'clean(ing)?', 'scale and polish']
+  whitening: ['whiten(ing)?', 'white teeth']
+  emergency: ['emergenc(y|ies)', 'urgent', 'same[- ]day']
+  booking: ['book(ing|ed)?', 'appointments?', 'website', 'phone', 'call']
+  opening hours: ['hours?', 'open(ing)?', 'clos(e|ed|ing)', '(mon|tues|wednes|thurs|fri|satur|sun)days?', 'weekends?', 'today', 'tomorrow']
+  cancellation: ['cancel(l?ation|l?ed|l?ing)?s?', 'reschedul(e|ing)']
+  pricing: ['prices?', 'pricing', 'costs?', 'how much', 'fees?', '£']
+  payment: ['pay(ment)?', 'card', 'cash', 'apple pay', 'google pay']
+  services: ['services?', 'treatments?', 'offer']
+
+escalation:
+  enabled: [complaint, human_request, legal, medical, price_negotiation]
+  guardrails: [medical, legal, insurance]
+  extra_patterns:
+    medical: ['toothache', 'tooth ?ache', 'bleed(ing)?', 'abscess', 'broken tooth', 'chipped', 'sensitiv(e|ity)', 'gums?']
+  custom:
+    insurance:
+      label: Insurance or payment plan query
+      patterns: ['insurance', 'insurer', 'denplan', 'claim', 'payment plans?', 'finance', 'instal?ments?']
+
+replies:
+  greeting: >-
+    Hi! Welcome to Brightside Dental Studio. I can help with our treatments, prices,
+    opening hours, booking, cancellations and payment. What would you like to know?
+  help: >-
+    I can help with our treatments, prices, opening hours, booking, cancellations and
+    payment. What would you like to know?
+  medical: >-
+    I'm sorry you're having trouble. Clinical questions are handled by our dentists, so
+    I've passed this to the team. If you're in pain, call us on 020 7946 0321 before
+    10 am for a same-day emergency appointment.
+  price_negotiation: >-
+    Our listed prices are fixed: check-up £60, hygienist clean £75, whitening from £300.
+    I've passed your request to the team in case they can help further.
+  insurance: >-
+    Insurance and payment plan questions are handled by our reception team. I've passed
+    your question on and they'll get back to you shortly.
+
+lead:
+  intro: "I can help you get booked in."
+  done: "Our reception team will call you to confirm your appointment."
+  fields:
+    - name: name
+      label: Name
+      question: Could I take your name, please?
+      description: The patient's name.
+    - name: treatment
+      label: Appointment type
+      type: choice
+      options: [Check-up, Hygienist clean, Teeth whitening, Emergency appointment]
+      question: What would you like to book (check-up, hygienist clean, whitening or an emergency appointment)?
+      description: The kind of appointment the patient wants.
+    - name: visited_before
+      label: Visited before
+      type: choice
+      options: ["Yes", "No"]
+      question: Have you visited us before?
+      description: Whether the patient has been to the practice before.
+    - name: contact
+      label: Phone
+      type: phone
+      question: What's the best phone number to reach you on?
+      description: The patient's phone number, digits only plus an optional leading +.
