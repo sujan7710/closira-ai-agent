@@ -71,6 +71,8 @@ scripts/check_groq.py  Checks that your Groq API key works
 ## Setup
 
 ```bash
+git clone https://github.com/sujan7710/closira-ai-agent.git
+cd closira-ai-agent
 python -m venv venv
 venv\Scripts\activate          # Windows  (source venv/bin/activate on macOS/Linux)
 pip install -r requirements-dev.txt
@@ -128,6 +130,8 @@ python evals/run_routing_eval.py --modes llm
 - Sessions are stored in memory (single process, cleared on restart). Production would use Redis or a database.
 - Escalations are logged but don't create tickets yet. Planned: persist handoff tickets and add an admin view.
 - The SOP is a Python string. Planned: load it from per-business config (YAML/JSON).
+
+Note: Groq is used as the LLM provider. The workflow is provider-agnostic: the LangChain chat model in `chatbot.py` and `classifier.py` can be swapped for OpenAI or Anthropic.
 
 ## Author
 
