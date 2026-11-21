@@ -1,6 +1,22 @@
+User: Hello
+
+Bot:
+Hello! Welcome to Bloom Aesthetics Clinic. I can help with our treatments, prices, opening hours, booking and cancellations. What would you like to know?
+
+---
+
 User: What are your Botox prices?
 
 Bot:
-Botox prices start from £200.
+Botox treatments start from £200.
 
-What type of business do you run?
+I'd be happy to help you book. May I have your name, please?
+
+---
+
+User: When are you open on Saturday?
+
+Bot:
+We’re open on Saturday from 9 am to 7 pm.
+
+May I have your name, please?

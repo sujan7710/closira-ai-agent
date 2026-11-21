@@ -1,5 +1,19 @@
 User: Do you provide dental surgery?
 
 Bot:
-I do not have that information in the SOP.
-I will escalate this to a human agent.
+I'm sorry, I don't have that information. I've noted your question so our team can follow up with you.
+
+---
+
+User: Do you offer laser hair removal services?
+
+Bot:
+I'm sorry, I don't have that information. I've noted your question so our team can follow up with you.
+
+---
+
+User: Do you have parking?
+
+Bot:
+I'm sorry I haven't been able to answer your questions. I've passed this conversation to a member of our team, who will get back to you shortly.
+[Escalated - More than 2 unanswered questions]

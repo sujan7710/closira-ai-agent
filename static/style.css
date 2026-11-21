@@ -7,6 +7,7 @@ body {
 
 .chat-container {
     width: 650px;
+    max-width: calc(100% - 32px);
     height: 90vh;
     margin: 20px auto;
     background: white;
@@ -18,20 +19,32 @@ body {
     flex-direction: column;
 }
 
-h1 {
+header {
     background: #4a6cf7;
     color: white;
-    margin: 0;
-    padding: 20px;
-    text-align: center;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
 }
 
-/* INPUT AREA AT TOP */
+h1 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.header-actions button {
+    margin-left: 8px;
+}
+
+/* INPUT AREA */
 
 .input-area {
     display: flex;
     padding: 15px;
-    border-bottom: 1px solid #ddd;
+    border-top: 1px solid #ddd;
     background: white;
 }
 
@@ -63,7 +76,22 @@ button:hover {
     background: #3557e0;
 }
 
-/* CHAT BELOW INPUT */
+button:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+button.secondary {
+    background: rgba(255, 255, 255, 0.18);
+    padding: 8px 14px;
+    font-size: 14px;
+}
+
+button.secondary:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* CHAT */
 
 #chat-box {
     flex: 1;
@@ -83,6 +111,8 @@ button:hover {
     max-width: 75%;
     line-height: 1.5;
     font-size: 16px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .user-message {
@@ -95,4 +125,22 @@ button:hover {
     background: #e4e7ec;
     color: black;
     align-self: flex-start;
+}
+
+.bot-message.loading {
+    color: #667085;
+    font-style: italic;
+}
+
+.bot-message.error {
+    background: #fdecea;
+    color: #8a1c12;
+}
+
+.badge {
+    margin-top: 8px;
+    font-size: 12px;
+    font-weight: bold;
+    color: #b54708;
+    white-space: normal;
 }

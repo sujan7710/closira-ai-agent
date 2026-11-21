@@ -1,0 +1,13 @@
+User: Is Botox safe during pregnancy?
+
+Bot:
+For your safety, medical questions are answered by our clinicians. I've passed your question to the team and someone will contact you shortly.
+[Escalated - Medical question (matched 'pregnancy')]
+
+---
+
+User: Can I get a discount on fillers?
+
+Bot:
+Our prices start from £200 for Botox and £250 for fillers. I've passed your request to our team, who can discuss pricing with you.
+[Escalated - Pricing negotiation (matched 'discount')]

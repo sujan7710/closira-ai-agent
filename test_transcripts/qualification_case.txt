@@ -1,9 +1,74 @@
-User: Clinic
+User: How much are fillers?
 
 Bot:
-How large is your team?
+Fillers start from £250.
 
-User: 5 members
+I'd be happy to help you book. May I have your name, please?
+
+---
+
+User: Sam Patel
 
 Bot:
-What tools are you currently using?
+Which treatment are you interested in (e.g. Botox, fillers, or a free consultation)?
+
+---
+
+User: How do I book?
+
+Bot:
+You can book an appointment through our website or by sending us a message on WhatsApp.
+
+Which treatment are you interested in (e.g. Botox, fillers, or a free consultation)?
+
+---
+
+User: Fillers
+
+Bot:
+What day and time would suit you for an appointment? We're open Mon–Sat, 9 am–7 pm.
+
+---
+
+User: Saturday afternoon
+
+Bot:
+What's the best phone number or WhatsApp to reach you on?
+
+---
+
+User: 07700 900123
+
+Bot:
+Thank you, Sam! Our team will contact you to confirm your booking.
+
+Type 'summary' to see a summary of this conversation.
+
+---
+
+User: summary
+
+Bot:
+Conversation Summary
+---------------------
+Customer messages: 7
+
+Topics asked about:
+- fillers
+- pricing
+- booking
+
+Lead qualification (Complete):
+- Name: Sam Patel
+- Treatment of interest: Fillers
+- Preferred time: Saturday afternoon
+- Contact: 07700 900123
+
+SOP gaps (questions the SOP could not answer):
+- None
+
+Escalations:
+- None
+
+Recommended next action:
+- Contact Sam Patel on 07700 900123 to book Fillers (Saturday afternoon).
