@@ -1,0 +1,24 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# New → Blueprint → pick this repo. Render asks for the secrets marked sync: false.
+services:
+  - type: web
+    name: closira-ai-agent
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CHAT_RATE_LIMIT
+        value: "20/60"
+      - key: CHAT_DAILY_LIMIT
+        value: "500"
+      # Free instances have no persistent disk, so the SQLite inbox resets on each
+      # deploy or restart. On a paid plan, add a disk mounted at /data to keep it.

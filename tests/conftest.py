@@ -8,6 +8,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import chatbot  # noqa: E402
 import classifier  # noqa: E402
 import extractor  # noqa: E402
+import app as app_module  # noqa: E402
+from ratelimit import RateLimiter  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -22,3 +24,7 @@ def no_network(monkeypatch, tmp_path):
     monkeypatch.setattr(classifier, "_classifiers", {})
     monkeypatch.setattr(extractor, "_extractors", {})
     monkeypatch.setenv("CLOSIRA_DB", str(tmp_path / "test.db"))
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    # Fresh, unlimited rate limiter per test (the suite sends many /chat requests).
+    monkeypatch.setattr(app_module, "limiter", RateLimiter())

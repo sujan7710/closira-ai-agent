@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env          # GROQ_API_KEY, FLASK_SECRET_KEY, ADMIN_PASSWORD, ...
+    environment:
+      APP_ENV: production
+      TRUST_PROXY: "0"      # clients connect directly here; put a proxy in front and set 1
+    volumes:
+      - closira-data:/data  # SQLite database survives restarts
+    restart: unless-stopped
+
+volumes:
+  closira-data:

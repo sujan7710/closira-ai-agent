@@ -1,5 +1,7 @@
 # Closira AI Customer Support Agent
 
+[![CI](https://github.com/sujan7710/closira-ai-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/sujan7710/closira-ai-agent/actions/workflows/ci.yml)
+
 A multi-business AI support agent for small businesses. Each business is a YAML file. The agent answers FAQs strictly from that business's SOP, qualifies leads, hands off to a human when the SOP says it must, and gives staff an inbox of handoffs, leads and unanswered questions.
 
 Two demo businesses are included: **Bloom Aesthetics Clinic** and **Brightside Dental Studio**.
@@ -66,7 +68,12 @@ The agent itself never touches the database. The web layer saves each turn, so t
 ## Project structure
 
 ```
-app.py                 Flask: chat pages per business, /chat, /reset, /admin inbox
+app.py                 Flask: chat pages per business, /chat, /reset, /admin inbox, /healthz
+ratelimit.py           Per-client and daily rate limits for the public demo
+Dockerfile             Production image (gunicorn, non-root, health check)
+docker-compose.yml     Run the image locally with a persistent volume
+render.yaml            Render Blueprint for a one-click live demo
+.github/workflows/     CI: tests, then Docker build and container smoke test
 business.py            Business config models (Pydantic) and loader
 businesses/*.yaml      One file per business
 chatbot.py             decide() / execute() router and the SOP-answering LLM call
@@ -107,6 +114,10 @@ GROQ_CLASSIFIER_MODEL=openai/gpt-oss-20b  # optional
 GROQ_EXTRACTOR_MODEL=openai/gpt-oss-20b   # optional (defaults to the classifier model)
 CLASSIFIER_CONFIDENCE_THRESHOLD=0.6       # optional
 ROUTER_MODE=llm                           # optional: llm | rules
+CHAT_RATE_LIMIT=20/60                     # optional: messages per client per N seconds (0 = off)
+CHAT_DAILY_LIMIT=0                        # optional: total messages per day across all users (0 = off)
+APP_ENV=development                       # production: enforce config, secure cookies, proxy headers
+TRUST_PROXY=1                             # production only: trust X-Forwarded-For (set 0 without a proxy)
 ```
 
 Run:
@@ -119,13 +130,47 @@ python app.py        # chat: http://127.0.0.1:5000   inbox: http://127.0.0.1:500
 
 Copy `businesses/bloom.yaml`, change the `id`, SOP, topics, replies and lead fields, and restart. It appears at `/b/<id>`, in the business switcher and in the inbox filters.
 
+## Deployment
+
+**Production mode** (`APP_ENV=production`, set by the Docker image):
+
+- The app refuses to start without `FLASK_SECRET_KEY` and `GROQ_API_KEY`.
+- The staff inbox is disabled until `ADMIN_PASSWORD` is set. There is no localhost exemption, because behind a proxy every request can look local.
+- Session cookies are `Secure`.
+- `X-Forwarded-For` is trusted for one hop, so the rate limiter sees real client IPs. Set `TRUST_PROXY=0` when nothing sits in front of the app, otherwise clients could spoof the header.
+- `/chat` is rate-limited per client (`CHAT_RATE_LIMIT`), with an optional daily cap (`CHAT_DAILY_LIMIT`) so a public demo can't use up the Groq quota.
+
+The image runs **one gunicorn worker with 8 threads**. That's deliberate: chat sessions and the rate limiter live in memory, so several worker processes would each have their own copy. LLM calls are I/O-bound, so threads give the concurrency. Scaling out means moving sessions and limits to Redis.
+
+### Docker
+
+```bash
+docker compose up --build      # http://localhost:8000, reads .env, SQLite kept in a volume
+```
+
+### Live demo on Render (free)
+
+1. Push to GitHub, then go to [Render](https://render.com) → **New → Blueprint** and pick this repo. It reads [`render.yaml`](render.yaml).
+2. Enter `GROQ_API_KEY` and `ADMIN_PASSWORD` when prompted. `FLASK_SECRET_KEY` is generated for you.
+3. Render builds the Dockerfile, checks `/healthz`, and redeploys on every push to `main`.
+
+Free instances sleep when idle (the first request takes about a minute) and have no persistent disk, so the SQLite inbox resets on each deploy. Add a disk at `/data` on a paid plan to keep it.
+
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and PR:
+
+1. Validates the business configs and runs the test suite offline.
+2. Builds the Docker image and starts it.
+3. Checks that `/healthz` and a chat page respond, and that `/admin` returns 401.
+
 ## Tests
 
 ```bash
 python -m pytest -q
 ```
 
-There are 74 tests covering:
+There are 87 tests covering:
 
 - routing in both modes and the fallbacks
 - guardrails, including custom business guardrails
@@ -135,6 +180,8 @@ There are 74 tests covering:
 - ticket deduplication and transcript updates
 - the gap report, and keeping businesses separate
 - inbox auth (localhost-only and password), CSRF, open-redirect and HTML escaping
+- production mode: required config, inbox disabled without a password
+- rate limiting, and proxy-header trust (spoofed `X-Forwarded-For` is ignored when `TRUST_PROXY=0`)
 
 A `conftest.py` fixture removes the API key and the cached model clients for every test, so no test can reach the network.
 
@@ -158,7 +205,7 @@ Rate-limited calls are retried in both evals, so a 429 can't quietly turn into a
 - Lead extraction is 90%. It sometimes infers a treatment that wasn't requested ("forehead wrinkles → Botox").
 - The gap report groups exact (normalised) wording. Next: cluster similar questions with embeddings.
 - Staff can resolve tickets but can't reply into the customer's chat yet.
-- Chat sessions are kept in memory and SQLite is single-node. Production would use Redis and Postgres.
+- Chat sessions and rate limits are kept in memory (one process), and SQLite is single-node. Scaling out would use Redis and Postgres.
 
 Note: Groq is used as the LLM provider. The workflow is provider-agnostic: the LangChain chat models can be swapped for OpenAI or Anthropic.
 

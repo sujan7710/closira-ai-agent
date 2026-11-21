@@ -8,10 +8,12 @@ from functools import wraps
 
 from dotenv import load_dotenv
 from flask import Flask, abort, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from business import BUSINESSES, DEFAULT_BUSINESS_ID, get_business
 from chatbot import get_response
 from conversation import SessionStore
+from ratelimit import RateLimiter, parse_rate
 from storage import Storage
 
 load_dotenv()
@@ -25,12 +27,35 @@ logger = logging.getLogger("closira.app")
 MAX_MESSAGE_LENGTH = 1000
 LOCAL_ADDRS = {"127.0.0.1", "::1", "localhost"}
 
+
+def is_production():
+    return os.getenv("APP_ENV", "development").lower() == "production"
+
+
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+
+if is_production():
+    # Fail fast on missing config instead of running a half-secure demo.
+    if not os.getenv("FLASK_SECRET_KEY"):
+        raise RuntimeError("FLASK_SECRET_KEY must be set when APP_ENV=production")
+    if not os.getenv("GROQ_API_KEY"):
+        raise RuntimeError("GROQ_API_KEY must be set when APP_ENV=production")
+    app.config.update(SESSION_COOKIE_SECURE=True)
+    # Behind a hosting proxy (Render, Fly, nginx), trust one hop of X-Forwarded-* so
+    # request.remote_addr is the real client (used by the rate limiter). Set
+    # TRUST_PROXY=0 when clients connect directly, or they could spoof the header.
+    if os.getenv("TRUST_PROXY", "1") == "1":
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32)
 
 store = SessionStore()
 _storages = {}
+limiter = RateLimiter(
+    per_client=parse_rate(os.getenv("CHAT_RATE_LIMIT", "20/60")),
+    daily=int(os.getenv("CHAT_DAILY_LIMIT", "0")),
+)
 
 
 def get_storage():
@@ -73,8 +98,17 @@ def chat_page(business_id):
     return render_template("index.html", business=biz, businesses=BUSINESSES.values())
 
 
+@app.route("/healthz")
+def healthz():
+    return jsonify({"status": "ok", "businesses": sorted(BUSINESSES)})
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
+    limited = limiter.check(request.remote_addr or "unknown")
+    if limited:
+        return jsonify({"error": limited}), 429
+
     data = request.get_json(silent=True) or {}
     message = data.get("message")
 
@@ -125,10 +159,16 @@ def reset():
 # ---------------------------------------------------------------------------
 
 def admin_required(view):
-    """HTTP Basic auth with ADMIN_PASSWORD; without it, the inbox only answers on localhost."""
+    """HTTP Basic auth with ADMIN_PASSWORD.
+
+    Without a password the inbox only answers on localhost in development, and is
+    disabled in production (behind a proxy every request can look local).
+    """
     @wraps(view)
     def wrapper(*args, **kwargs):
         password = os.getenv("ADMIN_PASSWORD")
+        if not password and is_production():
+            abort(503, description="Staff inbox disabled: set ADMIN_PASSWORD.")
         if password:
             auth = request.authorization
             if not auth or not hmac.compare_digest(auth.password or "", password):
