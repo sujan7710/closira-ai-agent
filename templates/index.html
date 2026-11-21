@@ -35,7 +35,7 @@ const sendBtn = document.getElementById("send-btn");
 
 // All text is inserted with textContent, never innerHTML, so user or model
 // output can never inject markup or scripts into the page.
-function addMessage(text, cls, badge) {
+function addMessage(text, cls, badge, meta) {
     const div = document.createElement("div");
     div.className = cls;
     div.textContent = text;
@@ -44,6 +44,12 @@ function addMessage(text, cls, badge) {
         tag.className = "badge";
         tag.textContent = badge;
         div.appendChild(tag);
+    }
+    if (meta) {
+        const m = document.createElement("div");
+        m.className = "meta";
+        m.textContent = meta;
+        div.appendChild(m);
     }
     chatBox.appendChild(div);
     chatBox.scrollTop = chatBox.scrollHeight;
@@ -70,7 +76,10 @@ async function sendMessage(message) {
         if (!res.ok) {
             addMessage(data.error || "Something went wrong. Please try again.", "bot-message error");
         } else {
-            addMessage(data.response, "bot-message", data.escalated ? "Escalated: " + data.reason : null);
+            // Routing trace: what happened, who decided it, and how confident the classifier was.
+            const meta = [data.route, data.source, data.confidence != null ? data.confidence.toFixed(2) : null]
+                .filter(Boolean).join(" · ");
+            addMessage(data.response, "bot-message", data.escalated ? "Escalated: " + data.reason : null, meta);
         }
     } catch (err) {
         loading.remove();

@@ -1,6 +1,36 @@
 # Prompt and Workflow Design
 
-## System prompt
+## Intent classifier (v2 router)
+
+`classifier.py` asks the model for a typed `Classification`:
+
+```python
+class Classification(BaseModel):
+    intent: Literal["greeting", "thanks", "smalltalk", "faq", "out_of_scope", "lead_answer",
+                    "complaint", "human_request", "legal", "medical", "price_negotiation"]
+    confidence: float  # 0..1
+    topics: list[Literal[<SOP topics>]]
+```
+
+It uses LangChain `with_structured_output(..., method="json_schema")`, so Groq enforces the schema and the result is validated by Pydantic. No string parsing is needed.
+
+**What the prompt includes:** the full SOP, so the model can tell `faq` from `out_of_scope`. A one-line definition of each intent with the tricky boundaries spelled out: asking a price is `faq`, asking for a lower price is `price_negotiation`, aftercare and recovery count as `medical`, negated statements are not complaints. A priority order for messages that fit more than one intent (medical > legal > complaint > human_request > price_negotiation). And an instruction to report confidence honestly.
+
+**What it sees per message:** the last 4 messages, the pending lead question (if any) and the latest message. The pending question is what lets "Botox" or "any time after 5 is good" be read as a lead answer.
+
+**How the router uses it:**
+
+| Condition | Who decides |
+|---|---|
+| Medical/legal keyword rule matches | Guardrail (escalates; the classifier is not called) |
+| Classifier confidence ≥ 0.6 | Classifier |
+| Confidence < 0.6, or the classifier errored | Keyword rules (`rules_fallback`) |
+
+The guardrail is asymmetric on purpose: in a clinic, missing a medical question costs far more than a false alarm.
+
+**Model choice:** `gpt-oss-20b` matched `gpt-oss-120b` on the eval (98%) with about 0.9s less latency, so the smaller model classifies and the larger one writes answers. See `evals/results.md`.
+
+## Answering system prompt
 
 Defined in `prompts.py`:
 
@@ -31,8 +61,8 @@ The customer-facing wording is fixed by the code, not chosen by the model.
 
 ## Preventing hallucinations (layered)
 
-1. **Escalation rules run before the LLM.** Medical questions, pricing negotiation, complaints, legal threats and requests for a human never reach the model (`escalation.py`).
-2. **Topic pre-filter.** Only messages that mention an SOP topic are sent to the LLM. Questions that clearly have nothing to do with the SOP are logged as gaps without a model call.
+1. **Escalations never reach the answering model.** Medical questions, pricing negotiation, complaints, legal threats and requests for a human are routed to a human by the classifier, with keyword guardrails for medical and legal.
+2. **Only `faq` messages are answered.** Out-of-scope questions are logged as gaps without an answering call.
 3. **SOP-only prompt plus the sentinel.** If the topic filter over-matches (e.g. "laser hair removal *services*"), the model returns `NO_SOP_ANSWER` instead of guessing. This has been checked against the real model; see `test_transcripts/out_of_scope.txt`.
 4. **Temperature 0** and short answers.
 5. **Fail closed.** If the LLM call errors or times out, the customer gets a handoff message and the error is recorded as an escalation. They never see a stack trace or an empty reply.

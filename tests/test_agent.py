@@ -15,8 +15,18 @@ from lead_qualification import LEAD_QUESTIONS  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def fake_llm(monkeypatch):
-    """Answer known SOP questions; return None (not in SOP) otherwise."""
+    """Answer known SOP questions; return None (not in SOP) otherwise.
+
+    Also defaults the router to rules mode and makes the real classifier
+    unreachable, so no test can hit the network by accident.
+    """
     calls = []
+    monkeypatch.setenv("ROUTER_MODE", "rules")
+
+    def no_network(state):
+        raise AssertionError("real classifier called in a test")
+
+    monkeypatch.setattr(chatbot.classifier, "classify", no_network)
 
     def fake_answer(state):
         question = state.transcript[-1][1].lower()

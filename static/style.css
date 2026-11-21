@@ -144,3 +144,10 @@ button.secondary:hover {
     color: #b54708;
     white-space: normal;
 }
+
+.meta {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #667085;
+    white-space: normal;
+}

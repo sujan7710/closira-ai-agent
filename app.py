@@ -58,6 +58,10 @@ def chat():
         "response": reply.text,
         "escalated": reply.escalated,
         "reason": reply.reason,
+        "route": reply.route,
+        "category": reply.category,
+        "source": reply.source,
+        "confidence": reply.confidence,
     })
 
 
