@@ -68,7 +68,7 @@ def test_admin_disabled_in_production_without_password(client, monkeypatch):
 
 def _import_app(env):
     full_env = {k: v for k, v in os.environ.items() if k not in ("FLASK_SECRET_KEY", "GROQ_API_KEY")}
-    full_env.update(env)
+    full_env.update({"GROQ_STARTUP_CHECK": "0", **env})
     return subprocess.run(
         [sys.executable, "-c", "import app"], cwd=ROOT, env=full_env, capture_output=True, text=True,
     )
@@ -104,7 +104,69 @@ def test_forwarded_for_only_trusted_behind_proxy(trust_proxy, second_status):
         print(r.status_code)
     """)
     env = {**os.environ, "APP_ENV": "production", "GROQ_API_KEY": "x", "FLASK_SECRET_KEY": "s",
-           "TRUST_PROXY": trust_proxy, "ROUTER_MODE": "rules", "CLOSIRA_DB": ":memory:"}
+           "TRUST_PROXY": trust_proxy, "ROUTER_MODE": "rules", "CLOSIRA_DB": ":memory:",
+           "GROQ_STARTUP_CHECK": "0"}
     res = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env, capture_output=True, text=True)
     assert res.returncode == 0, res.stderr
     assert res.stdout.strip().splitlines()[-1] == second_status
+
+
+@pytest.mark.parametrize("raw", ["gsk_abc", " gsk_abc ", '"gsk_abc"', "'gsk_abc'\n"])
+def test_api_key_is_cleaned(monkeypatch, raw):
+    import llm
+
+    monkeypatch.setenv("GROQ_API_KEY", raw)
+    assert llm.groq_api_key() == "gsk_abc"
+
+
+def test_missing_api_key_raises(monkeypatch):
+    import llm
+
+    monkeypatch.setenv("GROQ_API_KEY", "  ")
+    with pytest.raises(RuntimeError, match="not set"):
+        llm.groq_api_key()
+
+
+def _fake_groq(monkeypatch, models=None, error=None):
+    import types
+
+    import groq
+
+    class FakeGroq:
+        def __init__(self, **kwargs):
+            self.models = self
+
+        def list(self):
+            if error:
+                raise error
+            return types.SimpleNamespace(data=[types.SimpleNamespace(id=m) for m in models])
+
+    monkeypatch.setattr(groq, "Groq", FakeGroq)
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test")
+
+
+def test_connection_check_ok(monkeypatch):
+    import llm
+
+    _fake_groq(monkeypatch, models=["openai/gpt-oss-120b", "openai/gpt-oss-20b"])
+    ok, msg = llm.check_connection()
+    assert ok and msg.startswith("ok")
+
+
+def test_connection_check_reports_missing_model(monkeypatch):
+    import llm
+
+    _fake_groq(monkeypatch, models=["openai/gpt-oss-120b"])
+    ok, msg = llm.check_connection()
+    assert not ok and "openai/gpt-oss-20b" in msg
+
+
+def test_connection_check_reports_auth_error(monkeypatch):
+    import llm
+
+    class AuthenticationError(Exception):
+        pass
+
+    _fake_groq(monkeypatch, error=AuthenticationError("Invalid API Key"))
+    ok, msg = llm.check_connection()
+    assert not ok and msg.startswith("AuthenticationError")

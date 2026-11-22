@@ -93,9 +93,9 @@ def _get_llm():
     if _llm is None:
         from langchain_groq import ChatGroq
 
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError("GROQ_API_KEY is not set")
+        from llm import groq_api_key
+
+        api_key = groq_api_key()
         _llm = ChatGroq(
             api_key=api_key,
             model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),

@@ -70,9 +70,9 @@ def _get_classifier(business):
     if business.id not in _classifiers:
         from langchain_groq import ChatGroq
 
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError("GROQ_API_KEY is not set")
+        from llm import groq_api_key
+
+        api_key = groq_api_key()
         llm = ChatGroq(
             api_key=api_key,
             # 20b matched 120b's accuracy at lower latency; see evals/results.md

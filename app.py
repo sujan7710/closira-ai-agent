@@ -2,6 +2,7 @@ import hmac
 import logging
 import os
 import secrets
+import threading
 import uuid
 from datetime import datetime
 from functools import wraps
@@ -13,6 +14,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from business import BUSINESSES, DEFAULT_BUSINESS_ID, get_business
 from chatbot import get_response
 from conversation import SessionStore
+from llm import log_connection_check
 from ratelimit import RateLimiter, parse_rate
 from storage import Storage
 
@@ -42,6 +44,10 @@ if is_production():
     if not os.getenv("GROQ_API_KEY"):
         raise RuntimeError("GROQ_API_KEY must be set when APP_ENV=production")
     app.config.update(SESSION_COOKIE_SECURE=True)
+    # Say in the logs at boot whether Groq works (bad key, missing model, ...), instead of
+    # only finding out when every customer message turns into a handoff.
+    if os.getenv("GROQ_STARTUP_CHECK", "1") == "1":
+        threading.Thread(target=log_connection_check, daemon=True).start()
     # Behind a hosting proxy (Render, Fly, nginx), trust one hop of X-Forwarded-* so
     # request.remote_addr is the real client (used by the rate limiter). Set
     # TRUST_PROXY=0 when clients connect directly, or they could spoof the header.

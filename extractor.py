@@ -119,9 +119,9 @@ def _get_extractor(business):
     if business.id not in _extractors:
         from langchain_groq import ChatGroq
 
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError("GROQ_API_KEY is not set")
+        from llm import groq_api_key
+
+        api_key = groq_api_key()
         llm = ChatGroq(
             api_key=api_key,
             model=os.getenv("GROQ_EXTRACTOR_MODEL", os.getenv("GROQ_CLASSIFIER_MODEL", "openai/gpt-oss-20b")),

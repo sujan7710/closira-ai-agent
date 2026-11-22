@@ -154,6 +154,8 @@ docker compose up --build      # http://localhost:8000, reads .env, SQLite kept 
 2. Enter `GROQ_API_KEY` and `ADMIN_PASSWORD` when prompted. `FLASK_SECRET_KEY` is generated for you.
 3. Render builds the Dockerfile, checks `/healthz`, and redeploys on every push to `main`.
 
+**If every reply says "Sorry, I'm having trouble answering right now"**, the app can't reach Groq. Check the service logs for the `GROQ_CHECK` line written at startup. It names the cause, for example `AuthenticationError: 401 Invalid API Key` (re-paste the key) or `models not available to this key` (set `GROQ_MODEL` or `GROQ_CLASSIFIER_MODEL`). Spaces or quotes around a pasted key are stripped automatically.
+
 Free instances sleep when idle (the first request takes about a minute) and have no persistent disk, so the SQLite inbox resets on each deploy. Add a disk at `/data` on a paid plan to keep it.
 
 ### CI
